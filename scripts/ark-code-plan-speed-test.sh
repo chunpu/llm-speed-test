@@ -1,0 +1,2 @@
+node dist/index.js --models "glm-4.7,minimax-m2.5,doubao-seed-2.0-code,doubao-seed-2.0-pro,deepseek-v3.2,kimi-k2.5" --base-url $ARK_BASE_URL --api-key $ARK_API_KEY
+# node dist/index.js --models "deepseek-v3.2" --base-url $ARK_BASE_URL --api-key $ARK_API_KEY

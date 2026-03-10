@@ -1,0 +1,30 @@
+{
+  "name": "llm-speed-test",
+  "version": "1.0.0",
+  "description": "LLM speed test tool for measuring TTFT and TPS",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "llm-speed-test": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "llm",
+    "speed",
+    "test",
+    "ttft",
+    "tps"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.0"
+  }
+}
