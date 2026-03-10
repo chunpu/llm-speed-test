@@ -1,0 +1,1 @@
+node dist/index.js --models "claude-opus-4-6" --base-url $ANTHROPIC_BASE_URL --api-key $ANTHROPIC_AUTH_TOKEN --provider "anthropic"

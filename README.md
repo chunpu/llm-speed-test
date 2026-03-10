@@ -16,8 +16,16 @@ npm run build
 
 ## 使用
 
+### OpenAI API
+
 ```bash
 node dist/index.js --models "gpt-4o,gpt-4o-mini" --base-url "https://api.openai.com/v1" --api-key "your-api-key"
+```
+
+### Anthropic API
+
+```bash
+node dist/index.js --models "claude-opus-4-6,claude-opus-4-5" --base-url "https://api.anthropic.com/v1" --api-key "your-api-key" --provider "anthropic"
 ```
 
 ### 参数说明
@@ -25,6 +33,7 @@ node dist/index.js --models "gpt-4o,gpt-4o-mini" --base-url "https://api.openai.
 - `--models`: 要测试的模型列表，用逗号分隔
 - `--base-url`: LLM API 的基础 URL
 - `--api-key`: API 密钥
+- `--provider`: API 提供商，可选值为 "openai" 或 "anthropic"，默认为 "openai"
 
 ## 输出示例
 

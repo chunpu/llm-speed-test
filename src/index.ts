@@ -89,6 +89,7 @@ async function testModelSpeed(
   model: string,
   baseUrl: string,
   apiKey: string,
+  apiProvider: string,
 ): Promise<TestResult> {
   const startTime = Date.now();
   const timestamp = getTimestampWithTimezone();
@@ -96,20 +97,42 @@ async function testModelSpeed(
   let firstTokenTime: number | null = null;
   let contentTokens = 0;
   let reasoningTokens = 0;
+  let fullContent = '';
+  let fullReasoningContent = '';
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: model,
-      messages: [{ role: 'user', content: promptWithTimestamp }],
-      stream: true,
-      max_tokens: 100,
-    }),
-  });
+  let response;
+  if (apiProvider === 'anthropic') {
+    // Anthropic API call
+    response = await fetch(`${baseUrl}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: 'user', content: promptWithTimestamp }],
+        stream: true,
+        max_tokens: 100,
+      }),
+    });
+  } else {
+    // Default to OpenAI-compatible API
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: 'user', content: promptWithTimestamp }],
+        stream: true,
+        max_tokens: 100,
+      }),
+    });
+  }
 
   if (!response.ok) {
     throw new Error(
@@ -124,8 +147,6 @@ async function testModelSpeed(
 
   const decoder = new TextDecoder();
   let buffer = '';
-  let fullContent = '';
-  let fullReasoningContent = '';
 
   while (true) {
     const { done, value } = await reader.read();
@@ -143,8 +164,23 @@ async function testModelSpeed(
 
         try {
           const json = JSON.parse(data);
-          const content = json.choices?.[0]?.delta?.content;
-          const reasoningContent = json.choices?.[0]?.delta?.reasoning_content;
+          let content: string | undefined;
+          let reasoningContent: string | undefined;
+
+          if (apiProvider === 'anthropic') {
+            // Anthropic stream format
+            if (json.type === 'content_block_delta') {
+              content = json.delta?.text;
+            } else if (json.type === 'message_delta') {
+              // Initial message delta, no content yet
+            } else if (json.type === 'error') {
+              throw new Error(`Anthropic API error: ${json.error?.message}`);
+            }
+          } else {
+            // OpenAI-compatible format
+            content = json.choices?.[0]?.delta?.content;
+            reasoningContent = json.choices?.[0]?.delta?.reasoning_content;
+          }
 
           if (content || reasoningContent) {
             if (firstTokenTime === null) {
@@ -206,10 +242,16 @@ async function main() {
     )
     .requiredOption('--base-url <url>', 'Base URL for the LLM API')
     .requiredOption('--api-key <key>', 'API key for authentication')
+    .option(
+      '--provider <provider>',
+      'API provider (openai or anthropic)',
+      'openai',
+    )
     .parse(process.argv);
 
   const options = program.opts();
   const models = options.models.split(',').map((m: string) => m.trim());
+  const apiProvider = options.provider;
 
   const logDirName = getLogDirName();
   const currentLogDir = path.join(LOG_DIR, logDirName);
@@ -250,6 +292,7 @@ async function main() {
         model,
         options.baseUrl,
         options.apiKey,
+        apiProvider,
       );
       console.log(`[Done] ✓ ${model} completed`);
       writeLogEntry(modelLogPath, `[Done] ✓ ${model} completed`);
