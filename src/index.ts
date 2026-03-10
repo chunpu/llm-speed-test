@@ -1,6 +1,11 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
+import fs from 'fs';
+import path from 'path';
+
+const TEST_PROMPT = 'Write a short story about a robot learning to paint.';
+const LOG_DIR = path.join(process.cwd(), 'log');
 
 interface TestResult {
   model: string;
@@ -8,6 +13,65 @@ interface TestResult {
   tps: number;
   totalTokens: number;
   totalTime: number;
+  inputMessages: Array<{ role: string; content: string }>;
+  outputContent: string;
+}
+
+function getLogDirName(): string {
+  const now = new Date();
+  return now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+}
+
+function writeLogEntry(logPath: string, content: string): void {
+  fs.appendFileSync(logPath, content + '\n', 'utf8');
+}
+
+function formatSingleResult(result: TestResult): string {
+  let output = '';
+  output += '╔' + '═'.repeat(78) + '╗\n';
+  output +=
+    '║' + ' LLM Speed Test Result '.padStart(48, ' ').padEnd(78, ' ') + '║\n';
+  output += '╠' + '═'.repeat(78) + '╣\n';
+  output += '║' + ` Model: ${result.model}`.padEnd(78, ' ') + '║\n';
+  output += '╠' + '─'.repeat(78) + '╣\n';
+  output +=
+    '║' +
+    `  TTFT (Time to First Token): ${result.ttft.toFixed(3)}s`.padEnd(78, ' ') +
+    '║\n';
+  output +=
+    '║' +
+    `  TPS (Tokens Per Second):     ${result.tps.toFixed(2)} tokens/s`.padEnd(
+      78,
+      ' ',
+    ) +
+    '║\n';
+  output +=
+    '║' +
+    `  Total Tokens:                ${result.totalTokens}`.padEnd(78, ' ') +
+    '║\n';
+  output +=
+    '║' +
+    `  Total Time:                  ${result.totalTime.toFixed(3)}s`.padEnd(
+      78,
+      ' ',
+    ) +
+    '║\n';
+  output += '╚' + '═'.repeat(78) + '╝';
+  return output;
+}
+
+function getTimestampWithTimezone(): string {
+  const now = new Date();
+  return now.toLocaleString('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZoneName: 'short',
+  });
 }
 
 async function testModelSpeed(
@@ -15,9 +79,9 @@ async function testModelSpeed(
   baseUrl: string,
   apiKey: string,
 ): Promise<TestResult> {
-  const prompt = 'Write a short story about a robot learning to paint.';
-
   const startTime = Date.now();
+  const timestamp = getTimestampWithTimezone();
+  const promptWithTimestamp = `[${timestamp}] ${TEST_PROMPT}`;
   let firstTokenTime: number | null = null;
   let totalTokens = 0;
 
@@ -29,7 +93,7 @@ async function testModelSpeed(
     },
     body: JSON.stringify({
       model: model,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: promptWithTimestamp }],
       stream: true,
       max_tokens: 100,
     }),
@@ -48,6 +112,7 @@ async function testModelSpeed(
 
   const decoder = new TextDecoder();
   let buffer = '';
+  let fullContent = '';
 
   while (true) {
     const { done, value } = await reader.read();
@@ -72,6 +137,7 @@ async function testModelSpeed(
               firstTokenTime = Date.now();
             }
             totalTokens++;
+            fullContent += content;
           }
         } catch (e) {
           // Skip invalid JSON
@@ -91,44 +157,14 @@ async function testModelSpeed(
     tps,
     totalTokens,
     totalTime,
+    inputMessages: [{ role: 'user', content: promptWithTimestamp }],
+    outputContent: fullContent,
   };
 }
 
 function printSingleResult(result: TestResult) {
-  console.log('\n' + '='.repeat(80));
-  console.log('LLM Speed Test Results');
-  console.log('='.repeat(80) + '\n');
-  console.log(`Model: ${result.model}`);
-  console.log('-'.repeat(40));
-  console.log(`  TTFT (Time to First Token): ${result.ttft.toFixed(3)}s`);
-  console.log(
-    `  TPS (Tokens Per Second):     ${result.tps.toFixed(2)} tokens/s`,
-  );
-  console.log(`  Total Tokens:                ${result.totalTokens}`);
-  console.log(`  Total Time:                  ${result.totalTime.toFixed(3)}s`);
-  console.log('\n' + '='.repeat(80) + '\n');
-}
-
-function printResults(results: TestResult[]) {
-  console.log('\n' + '='.repeat(80));
-  console.log('LLM Speed Test Results');
-  console.log('='.repeat(80) + '\n');
-
-  for (const result of results) {
-    console.log(`Model: ${result.model}`);
-    console.log('-'.repeat(40));
-    console.log(`  TTFT (Time to First Token): ${result.ttft.toFixed(3)}s`);
-    console.log(
-      `  TPS (Tokens Per Second):     ${result.tps.toFixed(2)} tokens/s`,
-    );
-    console.log(`  Total Tokens:                ${result.totalTokens}`);
-    console.log(
-      `  Total Time:                  ${result.totalTime.toFixed(3)}s`,
-    );
-    console.log();
-  }
-
-  console.log('='.repeat(80));
+  const formatted = formatSingleResult(result);
+  console.log('\n' + formatted + '\n');
 }
 
 async function main() {
@@ -149,12 +185,40 @@ async function main() {
   const options = program.opts();
   const models = options.models.split(',').map((m: string) => m.trim());
 
-  console.log(
-    `\nTesting ${models.length} model(s) concurrently: ${models.join(', ')}\n`,
-  );
+  const logDirName = getLogDirName();
+  const currentLogDir = path.join(LOG_DIR, logDirName);
+
+  if (!fs.existsSync(currentLogDir)) {
+    fs.mkdirSync(currentLogDir, { recursive: true });
+  }
+
+  let header = '';
+  header += '╔' + '═'.repeat(78) + '╗\n';
+  header += '║' + ' LLM Speed Test '.padStart(46, ' ').padEnd(78, ' ') + '║\n';
+  header += '╠' + '═'.repeat(78) + '╣\n';
+  header +=
+    '║' +
+    ` Testing ${models.length} model(s) concurrently: ${models.join(', ')}`.padEnd(
+      78,
+      ' ',
+    ) +
+    '║\n';
+  header += '╠' + '─'.repeat(78) + '╣\n';
+  header += '║' + ' Test Prompt:'.padEnd(78, ' ') + '║\n';
+  const promptPreview =
+    TEST_PROMPT.length > 50 ? TEST_PROMPT.slice(0, 50) + '...' : TEST_PROMPT;
+  header += '║' + `   "${promptPreview}"`.padEnd(78, ' ') + '║\n';
+  header += '╚' + '═'.repeat(78) + '╝';
+
+  console.log('\n' + header + '\n');
+  // writeLogEntry(logPath, header);
 
   const testPromises = models.map(async (model: string) => {
     console.log(`[Start] Testing model: ${model}...`);
+    const modelLogPath = path.join(currentLogDir, `${model}.log`);
+    writeLogEntry(modelLogPath, header);
+    writeLogEntry(modelLogPath, `[Start] Testing model: ${model}...`);
+
     try {
       const result = await testModelSpeed(
         model,
@@ -162,12 +226,24 @@ async function main() {
         options.apiKey,
       );
       console.log(`[Done] ✓ ${model} completed`);
+      writeLogEntry(modelLogPath, `[Done] ✓ ${model} completed`);
       printSingleResult(result);
+
+      let logContent = '\n' + formatSingleResult(result) + '\n';
+      logContent += '\n' + '='.repeat(80) + '\n';
+      logContent += 'Input Messages:\n';
+      logContent += JSON.stringify(result.inputMessages, null, 2) + '\n';
+      logContent += '\n' + '-'.repeat(80) + '\n';
+      logContent += 'Output Content:\n';
+      logContent += result.outputContent + '\n';
+      logContent += '='.repeat(80) + '\n';
+
+      writeLogEntry(modelLogPath, logContent);
       return { success: true, result };
     } catch (error) {
-      console.error(
-        `[Fail] ✗ ${model}: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      );
+      const errorMsg = `[Fail] ✗ ${model}: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      console.error(errorMsg);
+      writeLogEntry(modelLogPath, errorMsg);
       return { success: false, error };
     }
   });
@@ -180,8 +256,11 @@ async function main() {
 
   if (results.length === 0) {
     console.error('No models were successfully tested.');
+    // writeLogEntry(logPath, 'No models were successfully tested.');
     process.exit(1);
   }
+
+  console.log(`\nLogs saved to directory: ${currentLogDir}`);
 }
 
 main().catch(error => {
