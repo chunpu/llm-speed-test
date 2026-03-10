@@ -15,6 +15,7 @@ interface TestResult {
   totalTime: number;
   inputMessages: Array<{ role: string; content: string }>;
   outputContent: string;
+  reasoningContent: string;
 }
 
 function getLogDirName(): string {
@@ -113,6 +114,7 @@ async function testModelSpeed(
   const decoder = new TextDecoder();
   let buffer = '';
   let fullContent = '';
+  let fullReasoningContent = '';
 
   while (true) {
     const { done, value } = await reader.read();
@@ -131,13 +133,21 @@ async function testModelSpeed(
         try {
           const json = JSON.parse(data);
           const content = json.choices?.[0]?.delta?.content;
+          const reasoningContent = json.choices?.[0]?.delta?.reasoning_content;
 
-          if (content) {
+          if (content || reasoningContent) {
             if (firstTokenTime === null) {
               firstTokenTime = Date.now();
             }
             totalTokens++;
+          }
+
+          if (content) {
             fullContent += content;
+          }
+
+          if (reasoningContent) {
+            fullReasoningContent += reasoningContent;
           }
         } catch (e) {
           // Skip invalid JSON
@@ -159,6 +169,7 @@ async function testModelSpeed(
     totalTime,
     inputMessages: [{ role: 'user', content: promptWithTimestamp }],
     outputContent: fullContent,
+    reasoningContent: fullReasoningContent,
   };
 }
 
@@ -233,6 +244,11 @@ async function main() {
       logContent += '\n' + '='.repeat(80) + '\n';
       logContent += 'Input Messages:\n';
       logContent += JSON.stringify(result.inputMessages, null, 2) + '\n';
+      if (result.reasoningContent) {
+        logContent += '\n' + '-'.repeat(80) + '\n';
+        logContent += 'Reasoning Content:\n';
+        logContent += result.reasoningContent + '\n';
+      }
       logContent += '\n' + '-'.repeat(80) + '\n';
       logContent += 'Output Content:\n';
       logContent += result.outputContent + '\n';
