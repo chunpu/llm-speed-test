@@ -11,6 +11,8 @@ interface TestResult {
   model: string;
   ttft: number;
   tps: number;
+  contentTokens: number;
+  reasoningTokens: number;
   totalTokens: number;
   totalTime: number;
   inputMessages: Array<{ role: string; content: string }>;
@@ -45,6 +47,14 @@ function formatSingleResult(result: TestResult): string {
       78,
       ' ',
     ) +
+    '║\n';
+  output +=
+    '║' +
+    `  Content Tokens:              ${result.contentTokens}`.padEnd(78, ' ') +
+    '║\n';
+  output +=
+    '║' +
+    `  Reasoning Tokens:            ${result.reasoningTokens}`.padEnd(78, ' ') +
     '║\n';
   output +=
     '║' +
@@ -84,7 +94,8 @@ async function testModelSpeed(
   const timestamp = getTimestampWithTimezone();
   const promptWithTimestamp = `[${timestamp}] ${TEST_PROMPT}`;
   let firstTokenTime: number | null = null;
-  let totalTokens = 0;
+  let contentTokens = 0;
+  let reasoningTokens = 0;
 
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
@@ -139,14 +150,15 @@ async function testModelSpeed(
             if (firstTokenTime === null) {
               firstTokenTime = Date.now();
             }
-            totalTokens++;
           }
 
           if (content) {
+            contentTokens++;
             fullContent += content;
           }
 
           if (reasoningContent) {
+            reasoningTokens++;
             fullReasoningContent += reasoningContent;
           }
         } catch (e) {
@@ -159,12 +171,15 @@ async function testModelSpeed(
   const endTime = Date.now();
   const totalTime = (endTime - startTime) / 1000;
   const ttft = firstTokenTime ? (firstTokenTime - startTime) / 1000 : 0;
+  const totalTokens = contentTokens + reasoningTokens;
   const tps = totalTokens / totalTime;
 
   return {
     model,
     ttft,
     tps,
+    contentTokens,
+    reasoningTokens,
     totalTokens,
     totalTime,
     inputMessages: [{ role: 'user', content: promptWithTimestamp }],
